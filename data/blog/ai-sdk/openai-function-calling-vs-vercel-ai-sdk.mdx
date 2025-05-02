@@ -1,0 +1,187 @@
+---
+title: OpenAI Function Calling vs. Vercel AI SDK Tools
+date: '2025-05-02'
+tags: ['OpenAI', 'ai-sdk', 'function-calling']
+draft: false
+summary: 'The AI SDK with Zod offers a higher-level, type-safe development experience ideal for most use cases where the set of tools is known and relatively small-to-medium. The native OpenAI API offers maximal flexibility and control with minimal overhead, which can be important in certain scenarios.'
+---
+
+## Introduction
+
+OpenAI’s function calling API (introduced in mid-2023) enables GPT-4 and GPT-3.5 Turbo models to call developer-defined functions (often called “tools”). This allows language models to interact with external systems by returning structured JSON arguments for function calls. For example, you might define a `get_weather` function that the model can call when asked about the weather. Developers have two main ways to integrate such tools into their apps:
+
+- **Using OpenAI’s native API directly:** You manually define functions with JSON Schema for parameters and handle the function execution loop yourself.
+- **Using Vercel’s AI SDK with Zod schemas:** The AI SDK provides a higher-level interface (`tool()` helper) where you define tools using [Zod](https://zod.dev) (a TypeScript schema library), and the SDK handles JSON schema conversion, type validation, and function execution flow for you.
+
+In this post, we’ll compare these approaches with code examples. We’ll explore how each handles tool definitions, how the AI SDK transforms Zod schemas to OpenAI-compatible formats, why the `zodSchema()` helper exists, and the pros/cons of each approach. We’ll also consider which approach is better suited for a small custom app versus a large SaaS with many dynamic tools. The focus throughout is on developer experience, type safety, validation, maintainability, and runtime overhead.
+
+## OpenAI’s Native Function Calling API
+
+OpenAI’s native approach requires sending a list of function definitions along with your chat prompt. Each function is described by its `name`, an optional `description`, and a `parameters` schema in JSON Schema format. Here’s how you might define a simple weather function in a Node/TypeScript context using the raw API:
+
+```ts
+const functions = [
+  {
+    name: 'get_weather',
+    description: 'Get current temperature for a given location.',
+    parameters: {
+      type: 'object',
+      properties: {
+        location: {
+          type: 'string',
+          description: 'City and country e.g. Bogotá, Colombia',
+        },
+      },
+      required: ['location'],
+      additionalProperties: false,
+    },
+  },
+]
+```
+
+In this JSON schema, we specify that `get_weather` expects an object with a **required** string field `location` and no other properties. This definition is sent to the OpenAI ChatCompletion API (as the `functions` parameter). For example, using the OpenAI Node SDK or REST call, you include `functions: functions` in the request. The model then has the option to output a function call if the user prompt seems to require it. The above schema is essentially what OpenAI expects – note how it’s quite verbose, spelling out types and descriptions in JSON form.
+
+When a function call is returned by the model, you will get a message like `{"role": "assistant", "function_call": {"name": "get_weather", "arguments": "{ \"location\": \"Paris, France\" }"}}`. Handling this requires **manual orchestration**: your code must detect the `function_call`, parse the `arguments` (a JSON string), execute the corresponding `get_weather` function in your server (e.g. call a weather API or database), then take the function’s result and send it back to the model in a follow-up prompt for completion. In practice, this means writing a loop: one request to get the function call, then another request including the function’s result (as a message with role `"function"`). OpenAI’s API won’t automatically execute or validate the function call for you – it just produces the JSON and leaves the rest up to the developer.
+
+OpenAI’s docs and community examples often use Pydantic (in Python) or other validators to define function schemas and validate outputs. For instance, one Medium article defines functions with Pydantic models so that the returned arguments can be validated against the schema, catching errors or formatting issues before execution. With the direct API, however, this validation is something you implement yourself. If the model’s returned JSON doesn’t match your schema (e.g., a missing required field), you’d need to handle that (maybe by sending an error message back to the model or defaulting values). The OpenAI model _usually_ follows the schema well, but having a validation layer (like Pydantic or Zod) gives extra reliability.
+
+**Summary:** The native approach gives you full control. You define functions by writing JSON schemas manually, and you manage the function execution loop. It has minimal runtime overhead (just JSON processing) and no external dependencies. However, it is fairly low-level: you must ensure the schema and your code stay in sync, and write extra code for parsing arguments, validation, and making the second API call to get the final answer. This can become boilerplate-heavy as you add more functions or complex parameter structures.
+
+## Vercel AI SDK and Zod-Based Tool Definitions
+
+Vercel’s AI SDK builds on OpenAI’s function calling to provide a more developer-friendly interface. With the AI SDK, you use the `tool()` helper to define a tool (function) by providing a description, a Zod schema for parameters, and an execute function. The SDK will handle converting the schema to JSON, injecting it into the API call, parsing the model’s response, and calling your execute function automatically. Here’s our `getWeather` example using the AI SDK:
+
+```ts
+import { z } from 'zod'
+import { tool } from 'ai'
+
+const getWeather = tool({
+  description: 'Get the weather in a location',
+  parameters: z.object({
+    location: z.string().describe('The location to get the weather for'),
+  }),
+  async execute({ location }) {
+    // For demo, return a static temperature. In real app, call a weather API.
+    return { location, temperature: 25 }
+  },
+})
+```
+
+This defines a tool named `getWeather` with a single string parameter `location`. Notice how concise this is compared to the raw JSON schema. We use Zod to declare the schema in code: `z.object({ location: z.string().describe('The location to get the weather for') })`. Zod allows attaching descriptions to each field (`.describe(...)`), which will be passed along as the OpenAI parameter description. The **execute** function is an async function that receives the parsed arguments (here, an object with `location`) and returns a result object (in this case, a dummy temperature). By wrapping this in `tool(...)`, the SDK links the schema to the execute logic and infers the TypeScript types for us. In fact, the `tool` helper uses generics to **infer the type** of `execute`’s input from the Zod schema, so `{ location }` is known to be a string in the function body – if we tried to access a property that isn’t defined in the schema, TypeScript would error. This built-in type safety is a major benefit of the SDK approach.
+
+To use this tool, we pass it into the AI SDK’s text generation function. For example:
+
+```ts
+import { generateText, openai } from 'ai'
+
+const response = await generateText({
+  model: openai('gpt-4'), // or 'gpt-3.5-turbo' etc.
+  prompt: 'What is the weather like today in Paris?',
+  tools: { getWeather },
+  // maxSteps: 2  (if we want the model to call tool then continue answering)
+})
+console.log(response.text)
+```
+
+Here we supplied the `tools` as an object with a key `getWeather`. The SDK will include our tool’s definition in the API call to OpenAI. If the model decides to call `getWeather`, the SDK intercepts that function call response, **automatically runs** our `execute` function with the provided arguments, and then (if `maxSteps` > 1) feeds the function result back to the model to get a final answer. In our example, the model’s final answer (in `response.text`) might incorporate the temperature returned by the tool. All of this happens with one `generateText` call from the developer’s perspective.
+
+Under the hood, the flow is similar to doing it manually, but the SDK abstracts it. In the default “automatic function execution” mode, the steps are: the SDK sends the function definitions and user prompt to OpenAI, OpenAI returns a function call JSON (if it chooses to), the SDK runs the function (`execute`), then the SDK sends the function’s output back to OpenAI to get the model’s answer, and finally returns that answer. This saves you from writing the loop and parsing logic yourself. You can even stream the response (`streamText`) and have multi-step tool usage with `maxSteps` (for example, if the model might call multiple tools in sequence) – the SDK will keep iterating until the answer is complete or a max step count is reached.
+
+## Zod to JSON Schema: How the AI SDK Bridges the Gap
+
+One key question is how the Zod schema gets converted into the JSON format that OpenAI requires. The AI SDK handles this conversion internally using a utility called `zodSchema()`. Essentially, when you pass a Zod schema to `tool()` or to a function like `generateObject`/`generateText`, the SDK will run `zodSchema(yourZodSchema)` behind the scenes. This produces a JSON Schema object equivalent to what you would have written by hand for OpenAI’s API. In our example, the Zod schema `z.object({ location: z.string().describe("...") })` would be transformed into a JSON object like `{ type: "object", properties: { location: { type: "string", description: "The location to get the weather for" } }, required: ["location"] }`. This is exactly what OpenAI’s function interface expects (and mirrors the manual schema we wrote in the first approach).
+
+In most cases, you don’t have to call `zodSchema()` yourself – just providing a Zod schema is enough. However, the AI SDK exposes this helper in case you need more control. For example, if you have a **complex or recursive schema**, you might need to enable references (`$ref`) in the JSON schema to avoid infinite nesting. `zodSchema()` accepts options like `{ useReferences: true }` to handle recursive types. The SDK will not automatically turn on `$ref` usage unless you tell it to, so in advanced cases you’d do something like:
+
+```ts
+const schema = z.object({ ... });  // maybe a recursive Zod schema
+const jsonParamSchema = zodSchema(schema, { useReferences: true });
+tool({ parameters: jsonParamSchema, execute: async(args)=>{...} });
+```
+
+This ensures the output schema is compatible with OpenAI’s expectations for complex cases. In short, **`zodSchema()` is needed to extract a proper OpenAI-compatible JSON Schema** from a Zod definition when you want to customize the conversion. By default, the AI SDK does this conversion implicitly for simple cases; you would use `zodSchema()` explicitly only for special scenarios or debugging. (There’s also a corresponding `jsonSchema()` helper if you already have a JSON schema and want to use it in the SDK, and even a `valibotSchema()` for another library – showing that the SDK is flexible with schema inputs.)
+
+## Developer Experience and Type Safety
+
+From a developer’s perspective, using the AI SDK with Zod can significantly improve the development experience compared to the native approach:
+
+- **Schema Definition:** Writing schemas in Zod (TypeScript) is typically more succinct and less error-prone than hand-writing JSON. The Zod syntax is code, so you get editor autocompletion and can break complex schemas into reusable components. As one developer noted, a Zod schema for a function can be less than half the length of the equivalent JSON schema. JSON Schema, while powerful, is verbose and not as tightly integrated with your programming language’s type system.
+
+- **Type Inference:** Perhaps the biggest win is type safety. When you define parameters with Zod, the AI SDK infers a TypeScript type for the function arguments and for the function’s return value. Your `execute` implementation is then fully typed — if you expect a string `location`, you cannot accidentally treat it as a number without TypeScript complaining. With the raw OpenAI approach, the function call arguments come in as an untyped JSON string that you parse. You might define a TypeScript type for the parsed result, but it’s disconnected from the JSON schema definition (unless you use a third-party generator). The AI SDK’s `tool()` helper ensures one source of truth for both the type and the schema. As the documentation highlights, you can rely on `tool()` to infer the types of `execute` parameters automatically.
+
+- **Validation:** With the SDK, argument validation is automatic. The model’s function call is validated against the Zod schema before `execute` runs. If the model returns something that doesn’t fit (e.g., a wrong type or missing field), Zod will throw a validation error. This could be caught and handled (the SDK could, for example, return an error message or ignore the tool call). In contrast, OpenAI’s native function calling does not perform explicit validation – the model is _guided_ by the schema but not guaranteed. In production systems, it’s wise to double-check the model’s output. Using Zod or another validator with OpenAI’s output is up to the developer; with the AI SDK, it’s built-in. This means fewer unchecked assumptions and easier debugging if something goes wrong. A similar concept in Python uses Pydantic to validate the function call before execution – the AI SDK essentially gives that to TypeScript developers via Zod.
+
+- **Maintainability:** When your application evolves, it’s easier to update a Zod schema and know all related code (the execute function and any TypeScript types) will update together. For example, if you add a new parameter or change a field name, your `execute` function’s signature will instantly reflect that change (or throw a type error if you forgot to update it). With the manual JSON approach, you’d have to remember to change the schema JSON, any code that parses the arguments, and the function implementation in tandem. The schema and code are separate, increasing the chance of them drifting out of sync. Using the AI SDK keeps the function definition as one cohesive unit of code.
+
+- **Boilerplate Reduction:** The SDK’s handling of the entire function call loop means you write far less glue code. You don’t need to manually parse JSON, call the function, and call the model again to get the final answer. This not only saves development time but also reduces the surface for bugs. The flow is managed by the SDK, which has been tested for these patterns.
+
+However, it’s important to note that the AI SDK’s conveniences come with some trade-offs or considerations:
+
+- **Learning Curve and Debugging:** Introducing the AI SDK and Zod means there’s an additional layer between you and the OpenAI API. If something isn’t working (say the model isn’t calling the tool when expected), you might need to understand how the SDK is formatting your schema or check if the descriptions are influencing the model. While the SDK provides debugging info (and you can inspect the raw request it sends to OpenAI), it’s another abstraction to learn. With the raw approach, you see the exact JSON you send and the raw response, which can sometimes simplify debugging. On the flip side, because the SDK is open source, you can dig into it if needed, and it is designed to be transparent about what it sends (e.g., you can log the JSON schema or use the same tools outside the generateText flow if needed).
+
+- **Dependency Footprint:** Using the AI SDK means adding the SDK itself and Zod to your project. Zod is quite lightweight and the benefits usually outweigh this cost, but in environments where minimal dependencies are preferred (or if you’re not using TypeScript at all), the native approach has zero additional dependencies beyond the OpenAI client. For most Node/TypeScript projects, Zod and the Vercel AI SDK are common and well-supported, so this is a minor concern.
+
+- **Flexibility:** The native approach is essentially just constructing data, so it’s as flexible as calling any API. You can dynamically generate function schemas at runtime, pull definitions from a database, or modify them on the fly before each request. With the AI SDK, the tool definitions (especially when using Zod) are typically created upfront in code. **Dynamic tools** are possible, but not as straightforward. In fact, a community discussion pointed out that the new AI SDK (which emphasizes Zod) made it less obvious how to create tools dynamically at runtime compared to a “legacy” approach where one could just pass in JSON on the fly. The answer was that you can still use the `jsonSchema()` helper to supply a raw JSON schema to a tool, rather than a Zod schema. This means if you have tool definitions stored as JSON (say in a database or coming from an API spec), you can wrap them with `tool({ parameters: jsonSchema(yourSchema), execute: ... })`. But you’ll lose the TypeScript inference in that case, since the schema isn’t written in Zod. In short, the AI SDK favors **static, code-defined tools**, whereas the native approach (or using `jsonSchema()` in SDK) might be better for highly dynamic scenarios. If your app needs to load new tool definitions on the fly, the native method or a hybrid approach could be simpler. (Another approach some developers take outside of the AI SDK is to use a library to generate Zod schemas from JSON or OpenAPI at runtime, but that can get complex.)
+
+## Pros and Cons of Each Approach
+
+Let’s summarize the advantages and disadvantages of OpenAI’s native function-calling vs. the Vercel AI SDK approach:
+
+- **OpenAI Native Function API – Pros:**
+
+  - _Simplicity of Control:_ You interact directly with the OpenAI API. Nothing is hidden – you send JSON, you get JSON. This can be easier to reason about in some cases and allows for custom handling at every step.
+  - _No Additional Library Overhead:_ You don’t need to introduce new libraries or paradigms. If your project is small or you want to minimize dependencies, this approach only relies on OpenAI’s SDK or a fetch call.
+  - _Dynamic Flexibility:_ It’s straightforward to generate or manipulate function definitions at runtime. For large or user-generated sets of tools, you can pull definitions from a database or another source and include them in the API call without having to define everything in code. This is ideal if your tools are not all known ahead of time or if they are managed outside of your application code (e.g., an admin panel that adds new tool definitions).
+  - _Up-to-Date with OpenAI Features:_ When OpenAI adds new function calling features or parameters, using the API directly means you can adopt them immediately. You’re not dependent on the AI SDK to expose a new option.
+
+- **OpenAI Native Function API – Cons:**
+
+  - _Manual Schema Writing:_ You must manually write JSON Schema for every function’s parameters. This is verbose and prone to typos or mistakes (e.g., forgetting a required field). If your schema is complex or nested, it’s easy to introduce inconsistencies.
+  - _No Built-in Type Safety:_ There is a disconnect between the schema and your function implementation. You might define in JSON that `location` is a string, but your function code doesn’t automatically get that as a typed variable. You’ll likely parse the `arguments` and cast to a TypeScript interface, but it’s on you to keep that interface in sync with the JSON schema. Without careful unit tests or additional tools, a mismatch could cause runtime errors.
+  - _Validation Overhead on Developer:_ The model usually adheres to the schema, but if it doesn’t, the developer has to catch that. The OpenAI API won’t reject a function call that doesn’t perfectly match the schema (it’s the model deciding what to output). So, you might get e.g. an extra field or a slightly misformatted value. Ensuring correctness (and sanitizing inputs) is your responsibility with the raw approach.
+  - _Boilerplate for Execution Loop:_ Implementing the function call involves multiple steps – sending the prompt with functions, checking the response, executing the function, then sending the function result back and getting the answer. You have to write this control logic (maybe in a loop or recursive call). While not extremely complex, it’s additional code that every project using function calling needs. For multiple tools or multi-step scenarios, this logic can grow (tracking state between calls, assembling messages, etc.). Libraries like LangChain or others can help abstract this, but then you’re again using an abstraction.
+
+- **Vercel AI SDK (Zod) – Pros:**
+
+  - _Type Safety and Schema Integration:_ Defining parameters with Zod yields immediate TypeScript types. Your tool implementation is type-checked against the schema, reducing bugs. The schema and code live together, so it’s easier to maintain consistency. This schema can also be reused elsewhere (for example, if you want to validate user input or use it in non-AI parts of your app, you have a ready-made validator).
+  - _Automatic Validation and Execution:_ The SDK handles validating the model’s function call and executing the function. You don’t have to manually parse a JSON string or worry about bad inputs – if the input doesn’t match the schema, the SDK can throw or ignore the call safely. After execution, it also handles calling the model again to get the final answer (in multi-step mode). This automation dramatically cuts down the amount of “glue” code you have to write. The overall result is faster development and less room for error in orchestration.
+  - _Developer Experience & Maintainability:_ The code is more **declarative**. You declare what the tool is and does, rather than writing the step-by-step procedural logic for how the model should use it. Many developers find this higher-level approach easier to work with, especially as the number of tools grows. All tool definitions can be organized as plain objects or modules. It also encourages good practices like defining clear descriptions (using Zod’s `.describe()` ensures the description is right next to the field definition, which might encourage providing better hints to the model).
+  - _Multi-Provider Compatibility:_ Although our focus is OpenAI, the AI SDK is designed to work across providers. If in the future another model API supports similar function calling or if you switch between OpenAI models (GPT-4, GPT-3.5) and maybe an Azure endpoint, the SDK abstracts those differences. You mostly change the `model: openai('...')` or swap to another provider integration. The tool definitions remain the same. (Note: not all providers support function calling yet; OpenAI is the main one. But the SDK’s design means your code is somewhat future-proof or at least easily adaptable.)
+  - _Community and Extensions:_ The AI SDK is open source and has growing community support. It includes features like toolkits (collections of pre-made tools) and integrations. By using it, you might benefit from other utilities (like streaming support, React hooks for UI, etc.) that are built around the same system.
+
+- **Vercel AI SDK (Zod) – Cons:**
+
+  - _Less Suitable for Highly Dynamic Tool Sets:_ As mentioned, if your application needs to define or load tools at runtime (for example, imagine an AI agent that reads an OpenAPI spec and generates functions on the fly), the Zod-centric approach can be cumbersome. You might end up generating Zod schemas programmatically or falling back to JSON schemas with the `jsonSchema()` helper. This is doable, but at that point, you lose some of the type-safety benefit (unless you also generate TypeScript types). The native approach or a more specialized system might be preferable for dynamic cases.
+  - _Initial Overhead and Abstraction:_ There is a bit of overhead in learning the SDK’s API, and under the hood it introduces an extra conversion step (Zod to JSON, and validation). These add slight runtime overhead – for example, Zod parsing has a cost, and constructing the JSON schema each call has a cost – though in practice these are usually negligible compared to the cost of the model call itself. Still, in a performance-critical environment, it’s another thing happening on the server. Most applications will not notice this overhead, but it’s technically there.
+  - _Dependency Updates and Breaking Changes:_ The AI SDK is relatively new (as of 2024) and is actively developed. It may introduce breaking changes or require updates as it matures (for instance, the question of “legacy” vs new SDK in discussions suggests there have been iterations). Using it means you’ll want to track its release notes. In contrast, the OpenAI function calling API is a stable interface that changes rarely (and when it does, it’s usually adding optional features).
+  - _Black-Box Execution:_ Because the SDK handles function calling for you, developers might be less aware of what’s happening under the hood. If you rely on the automation, you might not implement custom logging or metrics around function usage unless you explicitly add hooks for it. When debugging or auditing, it could be slightly harder to trace (“the model isn’t answering, did it call the function? what happened inside the SDK?”). However, the SDK does expose events/results for tool calls (e.g., the returned `text` or `object` includes tool call data) so you can still get insights. It’s just a different style than manually logging each step.
+
+In summary, the AI SDK with Zod offers a **higher-level, type-safe development experience** ideal for most use cases where the set of tools is known and relatively small-to-medium. The native OpenAI API offers **maximal flexibility and control** with minimal overhead, which can be important in certain scenarios (like managing a large and dynamic catalog of tools, or if you simply prefer to have full visibility into each step).
+
+## Small Apps vs. Large SaaS: Which to Choose?
+
+The choice between the two approaches can depend on the scale and nature of your project:
+
+- **Small Custom Apps (Few Tools):** For a personal project, hackathon, or a small feature within an app (say you just need one or two functions like weather lookup or database query), the Vercel AI SDK approach is often a big win. It lets you get up and running quickly with less boilerplate. You’ll benefit from type safety and not have to reinvent the wheel for things like validation and multi-step handling. For instance, adding a tool like `getWeather` or a calculator function can be done in a few lines with `tool()` and you can trust that the integration with the model is handled. The developer experience here is excellent – you focus on what the tool does, and the SDK worries about how the model uses it. Maintaining this code is also straightforward: everything related to the tool is localized in one place. If the app remains small with just those tools, you might never feel the need for the lower-level control of the raw API.
+
+- **Large SaaS Products (Many Tools):** Imagine you’re building a SaaS platform where an AI assistant might use dozens or even hundreds of tools, possibly user-defined or coming from an external configuration (for example, a platform where users can connect their own APIs or choose from a marketplace of tools). In this scenario, managing tools via code could become unwieldy. You might prefer to store tool definitions in a database or configuration files. The OpenAI native approach would allow you to dynamically load those definitions and pass them directly to the model as needed. It’s more straightforward to generate JSON from a database record than to generate a Zod schema on the fly. While the AI SDK can accept raw JSON schemas via `jsonSchema()`, at that point you’re mostly using the SDK for its orchestration capability, not for Zod’s type safety. In a large-scale system, you might also need fine-grained control over which tools to include for a given user query (to minimize token usage and avoid irrelevant tools). This custom logic can be implemented with either approach, but doing it outside the SDK might be conceptually simpler since you’re already manually managing the list of functions per request.
+
+That said, even large projects can benefit from the SDK if the tools are known and managed in code. For example, if you have 50 internal tools that your team maintains, you could still define them with `tool()` in a structured way (perhaps split into modules or using the concept of toolkits). The type safety and consistency might outweigh the inconvenience of writing a lot of Zod schemas. It really depends on how **dynamic** the tool set is. If new tools are added frequently by non-developers, that leans toward a data-driven approach with OpenAI’s raw API. If tools are relatively static or added by developers, the AI SDK can handle dozens or more (keeping in mind each tool’s schema contributes to the token load of prompts).
+
+**Performance considerations** for large numbers of tools: Note that regardless of approach, sending hundreds of function definitions to the model in one go could consume a lot of the context window and slow down response time. OpenAI’s API might have practical limits (in tokens) for how many function definitions you can send. In a large SaaS, you’ll likely implement some filtering or selection of relevant tools per query. The AI SDK doesn’t automatically do such filtering (it just takes whatever tools object you give it for that call), so it’s up to you to manage. Thus, large-scale tool management might involve more custom logic outside of either approach’s core capabilities. In such cases, you might lean on OpenAI’s raw interface plus your own logic, or use the AI SDK in a more limited way (with carefully chosen subsets of tools for each request).
+
+**Developer Team and Maintainability:** In a big project with multiple developers, using the AI SDK can enforce a consistent pattern for how tools are added and used. Junior developers, for example, can follow the established `tool({ description, parameters, execute })` pattern to add new functionality without needing to handle the intricacies of the OpenAI API. This can improve maintainability in the codebase, as opposed to potentially ad-hoc code for each new function call when using the raw API. On the other hand, depending on an SDK means you need to keep your team updated on how the SDK works and any changes to it. If your organization already has infrastructure for calling AI models (say you have a custom wrapper or are using another orchestration library like LangChain), introducing the Vercel SDK might conflict or overlap with existing solutions. OpenAI’s native approach is unopinionated and could fit into many frameworks.
+
+In essence, **for small to medium projects or when starting out, the AI SDK’s developer experience is usually superior** – it helps you move fast and confidently. **For very large or dynamic systems, the native approach might offer more flexibility** in how you source and manage functions, albeit with more manual coding. Some teams might even use a hybrid: e.g., use AI SDK for core static tools, but handle some dynamic extension with custom code.
+
+## Conclusion
+
+OpenAI’s function calling and Vercel’s AI SDK both aim to make AI integrations more powerful, but they cater to different needs. OpenAI’s native function calling API gives you raw power and control: you define everything in JSON and manage the process, which is flexible for all sorts of scenarios, especially dynamic ones. Vercel’s AI SDK builds on that by introducing Zod schemas and a streamlined interface, trading a bit of low-level control for a lot of developer convenience, type safety, and reduction in boilerplate.
+
+For an OSS developer or AI engineer building a production app, the choice may come down to the scale and complexity of your toolset, as well as personal/team preference. If you value strict type checking, easier validation, and quicker implementation, the AI SDK with Zod is likely the better choice. It shines in making your code cleaner and more robust with minimal effort. If you need maximum flexibility or are integrating into a complex system with many moving parts, you might opt to stick with the native API or use the SDK in a more limited fashion (e.g., via `jsonSchema()` or for specific providers).
+
+It’s worth noting that these approaches aren’t mutually exclusive. The AI SDK is essentially a layer on top of OpenAI’s functions – it even allows mixing raw JSON schemas if needed. You could start with the AI SDK for rapid development, and under the hood it’s still using OpenAI’s function calling (so you can always debug by looking at the JSON it produces). Conversely, you could gradually adopt the AI SDK in an existing project: for example, replace some manual schemas with Zod definitions to see the benefits in type safety, without rewriting everything at once.
+
+In the end, both methods leverage the **same OpenAI capability** – enabling your AI model to call your code. The difference lies in how much help you get from libraries in setting it up. If you’re building a small app or want to maximize developer happiness and correctness, the Vercel AI SDK’s tool system is a fantastic choice. If you’re architecting a large-scale solution or need fine-grained control, you might lean towards the native approach. Many developers find that starting with the higher-level SDK approach is productive, and they only drop down to the lower level if they hit specific limitations.
+
+Whichever path you choose, function calling opens up exciting possibilities for AI-driven applications. With either approach, you can build powerful tools and integrate them so that the AI model can extend beyond its training data – whether you do it “by hand” with JSON or with the comfort of Zod schemas and an SDK is up to you. Happy building!
