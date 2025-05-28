@@ -1,5 +1,7 @@
 {
-  "openai": 3,
+  "openai": 4,
+  "assistant-api": 1,
+  "responses-api": 1,
   "anthropic": 1,
   "xai": 1,
   "google-gemini": 1,
