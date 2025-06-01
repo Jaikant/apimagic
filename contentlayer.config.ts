@@ -1,4 +1,9 @@
-import { defineDocumentType, ComputedFields, makeSource } from 'contentlayer2/source-files'
+import {
+  defineDocumentType,
+  defineNestedType,
+  ComputedFields,
+  makeSource,
+} from 'contentlayer2/source-files'
 import { writeFileSync } from 'fs'
 import readingTime from 'reading-time'
 import { slug } from 'github-slugger'
@@ -41,6 +46,14 @@ const icon = fromHtmlIsomorphic(
 `,
   { fragment: true }
 )
+
+const FAQEntry = defineNestedType(() => ({
+  name: 'FAQEntry',
+  fields: {
+    question: { type: 'string', required: true },
+    answer: { type: 'string', required: true },
+  },
+}))
 
 const computedFields: ComputedFields = {
   readingTime: { type: 'json', resolve: (doc) => readingTime(doc.body.raw) },
@@ -93,6 +106,15 @@ function createSearchIndex(allBlogs) {
   }
 }
 
+interface FAQItem {
+  question: string
+  answer: string
+}
+
+interface FAQData {
+  _array?: FAQItem[]
+}
+
 export const Blog = defineDocumentType(() => ({
   name: 'Blog',
   filePathPattern: 'blog/**/*.mdx',
@@ -109,6 +131,7 @@ export const Blog = defineDocumentType(() => ({
     layout: { type: 'string' },
     bibliography: { type: 'string' },
     canonicalUrl: { type: 'string' },
+    faq: { type: 'list', of: FAQEntry },
   },
   computedFields: {
     ...computedFields,

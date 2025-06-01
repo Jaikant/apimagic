@@ -1,7 +1,9 @@
 {
-  "openai": 4,
-  "assistant-api": 1,
-  "responses-api": 1,
+  "geo": 1,
+  "ai-optimization": 1,
+  "openai": 5,
+  "assistant-api": 2,
+  "responses-api": 2,
   "anthropic": 1,
   "xai": 1,
   "google-gemini": 1,
