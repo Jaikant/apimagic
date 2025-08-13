@@ -31,7 +31,27 @@ summary: ''
 images: ['/static/images/... update it']
 ```
 
-- Add a frequently asked questions, by thinking through step by step through the `raw_blog`. A minimum of 5 Faqs should be added with a maximum of 15.
+**ADD UNIQUE INSIGHT BLOG**
+
+- Read the raw blog file at `raw_blog`. Then think step-by-step to add a unique insight to the blog based on the `raw_blog`, the unique insight should not change the meaning of the raw blog.
+
+**ONLY ONE TITLE**
+The title in the frontmatter is shown as a `h1` header in the blog. So after the frontmatter, there should be body text, not a header. If there is another header then remove that - unless absolutely needed.
+
+**ADD FAQs**
+
+- Read the raw blog file at `raw_blog`. Then think step-by-step to add a FAQ section. Come up with a set of faqs, a minimum of 5 faqs and a maximum of 15.
+- Add the faq to the frontmatter as shown below:
+
+```
+faq:
+  - question: How can ...
+    answer: Focus on ...
+  - question: What ...
+    answer: To optimize f...
+```
+
+- Add the faq to the blog towards the end of the blog.
 
 **STRIP RAW BLOG**
 The raw blog file at `raw_blog` would contain three parts:
@@ -46,9 +66,6 @@ Your task: Extract only the actual content (part 2), preserving its formatting e
 
 Remove parts 1 and 3 entirely. Do not add or change any wording inside the actual content. Do not leave blank lines where removed text was.
 
-**ONLY ONE TITLE**
-The title in the frontmatter is shown as a `h1` header in the blog. So after the frontmatter, there should be body text, not a header. If there is another header then remove that - unless absolutely needed.
-
 **UPDATE VOICE**
 Update the `raw_blog` with an Active Voice, which is clearer and more direct.
 Keeps sentences short and readable.
@@ -59,9 +76,8 @@ Keeps sentences short and readable.
 - For case studies, historical developments, or experiments use past tense.
 - For trends, predictions, and upcoming innovations use future tense.
 
-**ADD UNIQUE INSIGHT BLOG**
-
-- Read the raw blog file at `raw_blog`. Then think step-by-step to add a unique insight to the blog based on the `raw_blog`, the unique insight should not change the meaning of the raw blog.
-
 **FINAL POLISH**
 Balance technical precision with plain language so non-experts can follow.
+
+**NO UNNECESSARY BOLD IN PARAGRAPHS**
+Review the raw blog at `raw_blog` and remove unnecessary bold formatting. Keep bold only where it is essential for clarity or emphasis — for example, when naming a product, command, or unique technical term that benefits from standing out, but not more than once on the same word. Remove bold from generic words, common nouns, or phrases where it does not add value. Preserve headings, code formatting, and all other Markdown elements exactly as they are. The blog should have minimal but purposeful bold usage.

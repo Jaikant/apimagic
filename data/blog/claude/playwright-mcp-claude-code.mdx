@@ -5,15 +5,36 @@ tags: ['playwright', 'claude-code', 'mcp']
 draft: false
 summary: 'Learn how to install Playwright globally on macOS and connect it to Claude Code via MCP for seamless browser automation without duplicate downloads.'
 images: ['/static/images/claude/claude-mcp.webp']
+faq:
+  - question: Why install Playwright globally instead of per-project?
+    answer: Global installation prevents multiple Chromium downloads (each ~400MB) across different projects. You maintain one shared browser cache while still using project-specific test configurations.
+  - question: What does the `-s user` flag do when adding MCP?
+    answer: The `-s user` flag makes the MCP server available across all your projects, not just the current one. This matches the global Playwright installation approach.
+  - question: Can I use other browsers besides Chromium?
+    answer: Yes, you can install Firefox or WebKit using `playwright install firefox` or `playwright install webkit`. The MCP server supports all Playwright browsers.
+  - question: How do I update the Playwright MCP server?
+    answer: Run `claude mcp remove playwright` then add it again with the same command. The `npx -y` flag ensures you get the latest version.
+  - question: What if Claude can't find the browser?
+    answer: Ensure your global Playwright installation is in your PATH. Run `which playwright` to verify. You may need to restart your terminal or Claude Code.
+  - question: Can I use this setup with existing Playwright tests?
+    answer: Absolutely. Your existing test files and configurations remain unchanged. The global installation only affects the CLI availability, not your test execution.
+  - question: How much disk space does this save?
+    answer: Each Playwright browser is ~400MB. With multiple projects, you could save several GB by avoiding duplicate browser installations.
+  - question: Can I run this on Windows or Linux?
+    answer: Yes, the commands are similar. Windows users should use PowerShell or WSL. The MCP protocol and Playwright work identically across platforms.
+  - question: What happens if I need different browser versions?
+    answer: Playwright manages browser versions automatically. If you need specific versions, use `playwright install chromium@version`. The global cache handles multiple versions efficiently.
+  - question: How do I troubleshoot MCP connection issues?
+    answer: Run `claude mcp status playwright` to check the connection. Look for error messages and ensure `npx @playwright/mcp@latest` runs successfully outside Claude Code.
 ---
 
-This guide shows you exactly how to set up **Playwright with Chromium** to run globally on your MacBook **and** work inside **Claude Code** via the Playwright MCP server. You'll avoid duplicate browser downloads and get a working automation setup.
+This guide shows you exactly how to set up **Playwright** to run globally on your MacBook and work inside **Claude Code** via the **MCP** server. You'll avoid duplicate browser downloads and get a working automation setup.
 
 ## My Requirements
 
-- **Global install** of Playwright that works across multiple projects
-- Install Chromium **once** and share it across all Playwright uses to save disk space
-- Connect Playwright to **Claude Code** as an MCP server so Claude can drive Chromium
+- Global install of Playwright that works across multiple projects
+- Install Chromium once and share it across all Playwright uses to save disk space
+- Connect Playwright to Claude Code as an MCP server so Claude can drive Chromium
 - Prove it works by automating a browser action inside Claude Code
 - Bonus: move screenshots taken by Claude's Playwright MCP to Desktop
 
@@ -28,8 +49,8 @@ playwright install chromium
 
 This gives you:
 
-- A **global Playwright CLI** (`playwright`) available anywhere
-- Chromium installed **once** in the shared browser cache (`~/Library/Caches/ms-playwright`), preventing duplicates
+- A global Playwright CLI (`playwright`) available anywhere
+- Chromium installed once in the shared browser cache (`~/Library/Caches/ms-playwright`), preventing duplicates
 
 ## Step 2 — Add Playwright MCP to Claude Code (Global Scope)
 
@@ -39,7 +60,7 @@ Make Claude Code aware of Playwright:
 claude mcp add playwright -s user -- npx -y @playwright/mcp@latest
 ```
 
-- `-s user` makes it available in **all projects**
+- `-s user` makes it available in all projects
 - `npx` only installs the MCP package — it doesn't redownload Chromium
 
 Check the connection:
@@ -99,7 +120,7 @@ The screenshot now appears on your Desktop:
 
 You now have:
 
-- **One** Chromium install shared everywhere
+- One Chromium install shared everywhere
 - Playwright globally installed
 - Connection to Claude Code via MCP
 - Ability to navigate, interact, and screenshot sites from Claude
@@ -109,13 +130,13 @@ You now have:
 
 The approach that prevents duplicate installs:
 
-- **Global Playwright CLI** + `playwright install chromium` before adding MCP
+- Global Playwright CLI + `playwright install chromium` before adding MCP
 - Adding MCP with `-s user` scope to avoid per-project duplication
 - Letting Claude handle browser automation through MCP while explicitly requesting file paths when needed
 
 ## Unique Insight: MCP as the Bridge
 
-What makes this setup powerful is how MCP (Model Context Protocol) acts as a universal bridge between Claude and external tools. Unlike traditional automation where you write scripts, MCP lets you **describe** what you want in natural language. Claude translates your intent into browser actions, making complex automation accessible to anyone who can explain their goals clearly.
+What makes this setup powerful is how **MCP** (Model Context Protocol) acts as a universal bridge between Claude and external tools. Unlike traditional automation where you write scripts, **MCP** lets you describe what you want in natural language. Claude translates your intent into browser actions, making complex automation accessible to anyone who can explain their goals clearly.
 
 This pattern extends beyond Playwright. MCP transforms Claude from a text assistant into a controller for any tool that implements the protocol, creating a new paradigm where automation becomes conversational.
 
