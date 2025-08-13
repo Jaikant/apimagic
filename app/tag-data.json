@@ -1,4 +1,7 @@
 {
+  "playwright": 1,
+  "claude-code": 1,
+  "mcp": 1,
   "rag": 1,
   "tools": 1,
   "geo": 1,
