@@ -12,6 +12,8 @@ Parse the following arguments from "$ARGUMENTS":
 **ADD FRONTMATTER**
 
 - Read the raw blog file at `raw_blog`. Then add the following frontmatter fields to the raw blog.
+- Use double quotes in the YAML frontmatter title, which properly handles the apostrophe.
+- Use a maximum of three tags, not more than this.
 
 ```
 ---
@@ -43,6 +45,9 @@ Some closing conversational or instructional message(s) that are not part of the
 Your task: Extract only the actual content (part 2), preserving its formatting exactly (headings, bold, lists, code blocks, etc.).
 
 Remove parts 1 and 3 entirely. Do not add or change any wording inside the actual content. Do not leave blank lines where removed text was.
+
+**ONLY ONE TITLE**
+The title in the frontmatter is shown as a `h1` header in the blog. So after the frontmatter, there should be body text, not a header. If there is another header then remove that - unless absolutely needed.
 
 **UPDATE VOICE**
 Update the `raw_blog` with an Active Voice, which is clearer and more direct.
