@@ -1,17 +1,19 @@
 {
-  "playwright": 1,
-  "claude-code": 1,
-  "mcp": 1,
-  "rag": 1,
   "tools": 1,
+  "rag": 1,
   "geo": 1,
   "ai-optimization": 1,
   "openai": 4,
-  "assistant-api": 1,
-  "responses-api": 1,
   "anthropic": 1,
   "xai": 1,
   "google-gemini": 1,
+  "assistant-api": 1,
+  "responses-api": 1,
   "ai-sdk": 1,
-  "function-calling": 1
+  "function-calling": 1,
+  "testing": 1,
+  "claude-code": 2,
+  "llm": 1,
+  "playwright": 1,
+  "mcp": 1
 }
