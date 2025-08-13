@@ -61,19 +61,31 @@ export default function PostLayout({ content, authorDetails, next, prev, childre
               <dd>
                 <ul className="flex flex-wrap justify-center gap-4 sm:space-x-12 xl:block xl:space-y-8 xl:space-x-0">
                   {authorDetails.map((author) => (
-                    <li className="flex items-center space-x-2" key={author.name}>
-                      {author.avatar && (
-                        <Image
-                          src={author.avatar}
-                          width={38}
-                          height={38}
-                          alt="avatar"
-                          className="h-10 w-10 rounded-full"
-                        />
+                    <li key={author.name}>
+                      <div className="flex items-center space-x-2">
+                        {author.avatar && (
+                          <Image
+                            src={author.avatar}
+                            width={38}
+                            height={38}
+                            alt="avatar"
+                            className="h-10 w-10 rounded-full"
+                          />
+                        )}
+                        <dl className="text-sm leading-5 font-medium">
+                          <dt className="sr-only">Name</dt>
+                          <dd className="text-gray-900 dark:text-gray-100">{author.name}</dd>
+                        </dl>
+                      </div>
+                      {author.description && (
+                        <div className="mt-2">
+                          <dt className="sr-only">Description</dt>
+                          <dd className="text-xs leading-4 text-gray-600 dark:text-gray-400">
+                            {author.description}
+                          </dd>
+                        </div>
                       )}
-                      <dl className="text-sm leading-5 font-medium whitespace-nowrap">
-                        <dt className="sr-only">Name</dt>
-                        <dd className="text-gray-900 dark:text-gray-100">{author.name}</dd>
+                      <div className="mt-2">
                         <dt className="sr-only">Twitter</dt>
                         <dd>
                           {author.twitter && (
@@ -87,7 +99,7 @@ export default function PostLayout({ content, authorDetails, next, prev, childre
                             </Link>
                           )}
                         </dd>
-                      </dl>
+                      </div>
                     </li>
                   ))}
                 </ul>
