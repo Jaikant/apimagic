@@ -1,4 +1,7 @@
 {
+  "chatbots": 1,
+  "keyboard-shortcuts": 1,
+  "user-interface": 1,
   "testing": 1,
   "claude-code": 2,
   "llm": 1,
