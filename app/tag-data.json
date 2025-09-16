@@ -1,5 +1,7 @@
 {
-  "chatbots": 1,
+  "chatbots": 2,
+  "ai": 1,
+  "business-tools": 1,
   "keyboard-shortcuts": 1,
   "user-interface": 1,
   "testing": 1,
